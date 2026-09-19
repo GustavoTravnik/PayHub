@@ -21,6 +21,7 @@ export const authOptions: AuthOptions = {
           GoogleProvider({
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+            allowDangerousEmailAccountLinking: true,
           }),
         ]
       : []),
@@ -112,23 +113,56 @@ export const authOptions: AuthOptions = {
       if (account?.provider === "google") {
         try {
           if (user.email) {
+            const normalizedEmail = user.email.toLowerCase().trim();
             const existingUser = await prisma.user.findUnique({
-              where: { email: user.email },
+              where: { email: normalizedEmail },
             });
+
+            let dbUserId = "";
 
             if (!existingUser) {
               const newUser = await prisma.user.create({
                 data: {
-                  email: user.email,
+                  email: normalizedEmail,
                   name: user.name || "Usuário PayHub",
-                  image: user.image || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(user.email)}`,
+                  image: user.image || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
                 },
               });
+              dbUserId = newUser.id;
               user.id = newUser.id;
             } else {
+              dbUserId = existingUser.id;
               user.id = existingUser.id;
               (user as any).cpf = existingUser.cpf;
               (user as any).phone = existingUser.phone;
+            }
+
+            // Cria vínculo na tabela Account se ainda não existir
+            if (account.providerAccountId && dbUserId) {
+              const existingAccount = await prisma.account.findUnique({
+                where: {
+                  provider_providerAccountId: {
+                    provider: account.provider,
+                    providerAccountId: account.providerAccountId,
+                  },
+                },
+              });
+
+              if (!existingAccount) {
+                await prisma.account.create({
+                  data: {
+                    userId: dbUserId,
+                    type: account.type,
+                    provider: account.provider,
+                    providerAccountId: account.providerAccountId,
+                    access_token: account.access_token,
+                    expires_at: account.expires_at,
+                    token_type: account.token_type,
+                    scope: account.scope,
+                    id_token: account.id_token,
+                  },
+                });
+              }
             }
           }
         } catch (error) {
@@ -138,14 +172,35 @@ export const authOptions: AuthOptions = {
       return true;
     },
     async jwt({ token, user, trigger, session }) {
+      // Login inicial
       if (user) {
         token.id = user.id;
-        token.email = user.email;
+        token.email = user.email?.toLowerCase().trim();
         token.name = user.name;
         token.picture = user.image;
         token.cpf = (user as any).cpf || null;
         token.phone = (user as any).phone || null;
       }
+
+      // Sincroniza dados atualizados do banco (especialmente após Google login ou KYC)
+      if (token.email && (!token.cpf || !token.phone || !token.id)) {
+        try {
+          const dbUser = await prisma.user.findUnique({
+            where: { email: token.email as string },
+            select: { id: true, name: true, image: true, cpf: true, phone: true },
+          });
+
+          if (dbUser) {
+            token.id = dbUser.id;
+            token.cpf = dbUser.cpf;
+            token.phone = dbUser.phone;
+            if (dbUser.name) token.name = dbUser.name;
+          }
+        } catch (error) {
+          // Mantém valores existentes se o banco falhar
+        }
+      }
+
       // Permite atualizar os dados KYC via session.update()
       if (trigger === "update" && session) {
         if (session.name) token.name = session.name;
