@@ -7,3 +7,13 @@ This version has breaking changes — APIs, conventions, and file structure may 
 This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
 
 <!-- END:nextjs-agent-rules -->
+
+# Regras Globais do PayHub para Agentes de IA
+
+## Persistência de Dados Sem Máscara
+- **Todos os valores salvos no banco de dados devem ser salvos estritamente SEM MÁSCARA.**
+- Chaves Pix de CPF e CNPJ: apenas números (ex: `12345678909`, `12345678000195`).
+- Telefone: apenas números com DDD (ex: `11999999999`).
+- E-mail e EVP: formato canônico normalizado (minúsculo e sem espaços).
+- Valores monetários: inteiros em centavos (ex: `5000` para R$ 50,00).
+- Máscaras devem existir apenas na camada visual/apresentação (front-end).

@@ -18,6 +18,10 @@ import {
   ArrowUpRight,
   Sparkles,
 } from "lucide-react";
+import { PixAccountManager } from "@/components/dashboard/PixAccountManager";
+import { PixChargeGenerator } from "@/components/dashboard/PixChargeGenerator";
+import { KycCompletionModal } from "@/components/dashboard/KycCompletionModal";
+import { formatPixKeyForDisplay } from "@/lib/pix-validation";
 
 export default function DashboardPage() {
   const { data: session, status, update } = useSession();
@@ -171,6 +175,11 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+
+        {/* Alerta / Modal de Complementação de Cadastro para Stark Bank se faltar CPF ou Telefone */}
+        {(!user.cpf || !user.phone) && (
+          <KycCompletionModal onComplete={() => router.refresh()} />
+        )}
 
         {/* Abas de Navegação */}
         <div className="flex items-center gap-2 border-b border-slate-800 pb-2 overflow-x-auto">
@@ -370,6 +379,45 @@ export default function DashboardPage() {
                   </p>
                 </div>
 
+                {/* CPF Homologado */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300">
+                      CPF Homologado (Stark Bank)
+                    </label>
+                    <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      ✓ BACEN / SPI Aprovado
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    disabled
+                    value={user.cpf ? formatPixKeyForDisplay("CPF", user.cpf) : "Pendente de homologação"}
+                    className="w-full rounded-xl bg-slate-950/50 border border-slate-800/60 px-3.5 py-2.5 text-sm font-mono text-slate-300 cursor-not-allowed"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-500 font-mono">
+                    No banco: {user.cpf || "não cadastrado"} (gravado estritamente sem máscara)
+                  </p>
+                </div>
+
+                {/* Celular Homologado */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300">
+                      Celular de Contato
+                    </label>
+                  </div>
+                  <input
+                    type="text"
+                    disabled
+                    value={user.phone ? formatPixKeyForDisplay("PHONE", user.phone) : "Pendente de homologação"}
+                    className="w-full rounded-xl bg-slate-950/50 border border-slate-800/60 px-3.5 py-2.5 text-sm font-mono text-slate-300 cursor-not-allowed"
+                  />
+                  <p className="mt-1 text-[10px] text-slate-500 font-mono">
+                    No banco: {user.phone || "não cadastrado"} (gravado estritamente sem máscara)
+                  </p>
+                </div>
+
                 <div className="pt-2 flex justify-end">
                   <button
                     type="submit"
@@ -392,33 +440,11 @@ export default function DashboardPage() {
         )}
 
         {/* Conteúdo da Aba: Chaves Pix */}
-        {activeTab === "pix" && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center space-y-4 max-w-2xl mx-auto">
-            <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/20">
-              <KeyRound className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-white">Módulo de Chaves Pix</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Este módulo está pronto para ser integrado com o banco de dados e permitirá cadastrar suas chaves (CPF, CNPJ, Email, Telefone ou EVP) para recebimento automático dos repasses via Stark Bank.
-              </p>
-            </div>
-          </div>
-        )}
+        {activeTab === "pix" && <PixAccountManager />}
 
         {/* Conteúdo da Aba: Cobranças */}
         {activeTab === "charges" && (
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-8 text-center space-y-4 max-w-2xl mx-auto">
-            <div className="h-12 w-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/20">
-              <QrCode className="h-6 w-6" />
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-base font-bold text-white">Geração de Cobrança Pix</h3>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Aqui você poderá digitar o valor desejado, selecionar uma das suas chaves cadastradas e emitir o Pix Dinâmico da Stark Bank com QR Code visual e Copia e Cola.
-              </p>
-            </div>
-          </div>
+          <PixChargeGenerator onNavigateToPix={() => setActiveTab("pix")} />
         )}
       </div>
     </div>

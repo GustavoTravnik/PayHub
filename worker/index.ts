@@ -1,6 +1,6 @@
 import { Worker, Job } from 'bullmq';
-import * as starkbank from 'starkbank';
 import { PrismaClient } from '@prisma/client';
+import * as starkbank from 'starkbank';
 
 const prisma = new PrismaClient();
 const redisOptions = {
@@ -8,99 +8,138 @@ const redisOptions = {
   port: parseInt(process.env.REDIS_PORT || '6379'),
 };
 
-const environment = process.env.STARK_BANK_ENVIRONMENT === 'sandbox' ? 'sandbox' : 'production';
-starkbank.setUser(new starkbank.Project({
-  environment,
-  id: process.env.STARK_BANK_PROJECT_ID || '',
-  privateKey: process.env.STARK_BANK_PRIVATE_KEY || '',
-}));
+// ---------------------------------------------------------------------------
+// Inicialização do Stark Bank SDK
+// ---------------------------------------------------------------------------
+const environment = process.env.STARK_BANK_ENVIRONMENT === 'production' ? 'production' : 'sandbox';
+const projectId = process.env.STARK_BANK_PROJECT_ID || '';
+const privateKey = (process.env.STARK_BANK_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
-// A taxa da plataforma será fixada em R$ 1,50 (150 centavos) provisoriamente
-const PLATFORM_FEE_CENTS = 150; 
+if (projectId && privateKey && privateKey.includes('BEGIN')) {
+  starkbank.setUser(new starkbank.Project({
+    environment,
+    id: projectId,
+    privateKey,
+  }));
+  console.log(`[Worker] ✅ Stark Bank SDK inicializado (${environment})`);
+} else {
+  console.warn('[Worker] ⚠️ Stark Bank não configurado — repasses não serão executados');
+}
 
+// Taxa da plataforma (R$ 1,50 = 150 centavos)
+const PLATFORM_FEE_CENTS = 150;
+
+/**
+ * Processa um evento de webhook enfileirado pelo BullMQ.
+ *
+ * Este worker é um fallback assíncrono. O processamento principal
+ * acontece diretamente na rota POST /api/webhooks/starkbank.
+ */
 async function processWebhookJob(job: Job) {
-  console.log(`Processando job de webhook ${job.id}`);
+  console.log(`[Worker] Processando job ${job.id}`);
   const { event } = job.data;
-  
-  if (event.log.type !== 'credited') {
-    console.log('Fatura gerada ou outro evento ignorado no repasse');
-    return;
-  }
-  
-  const invoiceId = event.log.invoice.id;
 
-  try {
+  // Processa eventos de Invoice (cash-in)
+  if (event.subscription === 'invoice' && event.log?.type === 'credited') {
+    const invoiceId = event.log.invoice.id;
+
     const transaction = await prisma.transaction.findUnique({
       where: { starkBankInvoiceId: invoiceId },
-      include: { pixAccount: true }
+      include: { pixAccount: true, user: true },
     });
 
     if (!transaction) {
-      console.error(`Transação não encontrada para Invoice ID: ${invoiceId}`);
+      console.error(`[Worker] Transação não encontrada para Invoice: ${invoiceId}`);
       return;
     }
 
     if (transaction.status !== 'PENDING') {
-      console.log(`Transação ${transaction.id} não está pendente`);
+      console.log(`[Worker] Transação ${transaction.id} já processada (${transaction.status})`);
       return;
     }
 
-    // 1. Atualiza pra PAID
+    // Atualiza para PAID
     await prisma.transaction.update({
       where: { id: transaction.id },
-      data: { status: 'PAID' }
+      data: { status: 'PAID' },
     });
 
-    // 2. Calcula taxa e líquido
-    const amount = transaction.amount;
-    let netAmount = amount - PLATFORM_FEE_CENTS;
-    if (netAmount < 0) netAmount = 0; // Prevenção de saldo negativo
+    // Calcula repasse
+    const netAmount = Math.max(transaction.amount - PLATFORM_FEE_CENTS, 0);
 
-    // 3. Efetua repasse Stark Bank
-    // Nota: A API real da Stark Bank para PIX via chave pode requerer resolução prévia no DICT
-    // Aqui usamos o mock do SDK 'transfer.create' para ilustrar a arquitetura.
-    const transfer = await starkbank.transfer.create([
-      new starkbank.Transfer({
-        amount: netAmount,
-        name: 'Repasse PayHub', 
-        taxId: transaction.pixAccount.keyType === 'CPF' || transaction.pixAccount.keyType === 'CNPJ' ? transaction.pixAccount.pixKey : '00000000000', // Mock
-        bankCode: '20018183', // Codigo Banco
-        branchCode: '0001',
-        accountNumber: '12345-6',
-        accountType: 'checking',
-        tags: [`transactionId:${transaction.id}`]
-      })
-    ]);
+    if (netAmount > 0 && privateKey.includes('BEGIN')) {
+      try {
+        const transfer = await starkbank.transfer.create([
+          new starkbank.Transfer({
+            amount: netAmount,
+            name: transaction.user.name || 'Beneficiário PayHub',
+            taxId: transaction.pixAccount.keyType === 'CPF' || transaction.pixAccount.keyType === 'CNPJ'
+              ? transaction.pixAccount.pixKey
+              : transaction.user.cpf || '00000000000',
+            bankCode: '20018183',
+            branchCode: '0001',
+            accountNumber: '10000-0',
+            accountType: 'checking',
+            tags: [`transactionId:${transaction.id}`, 'repasse:payhub'],
+          }),
+        ]);
 
-    const createdTransfer = transfer[0];
+        await prisma.transaction.update({
+          where: { id: transaction.id },
+          data: {
+            status: 'TRANSFER_PENDING',
+            fee: PLATFORM_FEE_CENTS,
+            netAmount,
+            starkBankTransferId: transfer[0].id,
+          },
+        });
 
-    // 4. Atualiza banco para TRANSFER_PENDING / COMPLETED 
-    await prisma.transaction.update({
-      where: { id: transaction.id },
-      data: {
-        status: 'TRANSFER_PENDING',
-        fee: PLATFORM_FEE_CENTS,
-        netAmount: netAmount,
-        starkBankTransferId: createdTransfer.id
+        console.log(`[Worker] ✅ Repasse criado: ${transfer[0].id}`);
+      } catch (err: any) {
+        console.error('[Worker] ❌ Erro no repasse:', err?.message);
+        await prisma.transaction.update({
+          where: { id: transaction.id },
+          data: { status: 'FAILED' },
+        });
       }
+    }
+  }
+
+  // Processa eventos de Transfer (cash-out)
+  if (event.subscription === 'transfer') {
+    const transferId = event.log?.transfer?.id;
+    if (!transferId) return;
+
+    const transaction = await prisma.transaction.findUnique({
+      where: { starkBankTransferId: transferId },
     });
 
-    console.log(`Repasse enfileirado/gerado com sucesso para transação ${transaction.id}`);
+    if (!transaction) return;
 
-  } catch (err) {
-    console.error('Erro ao processar repasse:', err);
-    throw err; // Força retry no BullMQ
+    if (event.log.type === 'success') {
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { status: 'COMPLETED' },
+      });
+      console.log(`[Worker] ✅ Transação ${transaction.id} COMPLETADA`);
+    } else if (event.log.type === 'failed') {
+      await prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { status: 'FAILED' },
+      });
+      console.error(`[Worker] ❌ Transfer ${transferId} FALHOU`);
+    }
   }
 }
 
 const worker = new Worker('starkbank-webhooks', processWebhookJob, { connection: redisOptions });
 
 worker.on('completed', job => {
-  console.log(`Job ${job.id} concluído com sucesso`);
+  console.log(`[Worker] Job ${job.id} concluído`);
 });
 
 worker.on('failed', (job, err) => {
-  console.error(`Job ${job?.id} falhou com o erro ${err.message}`);
+  console.error(`[Worker] Job ${job?.id} falhou: ${err.message}`);
 });
 
 console.log('🚀 Worker iniciado e escutando fila "starkbank-webhooks"');
