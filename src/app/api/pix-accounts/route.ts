@@ -14,7 +14,7 @@ export async function GET() {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const userId = (session.user as any).id || session.user.email;
+  const userId = (session.user as unknown).id || session.user.email;
 
   try {
     // 1. Busca usuário
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const userId = (session.user as any).id || session.user.email;
+  const userId = (session.user as unknown).id || session.user.email;
 
   try {
     const body = await req.json();
@@ -143,7 +143,7 @@ export async function POST(req: Request) {
         account: mockAccount,
       });
     }
-  } catch (error: any) {
+  } catch {
     console.error("Erro ao cadastrar chave Pix:", error);
     return NextResponse.json({ error: "Erro interno ao processar a chave Pix." }, { status: 500 });
   }
@@ -156,7 +156,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
   }
 
-  const userId = (session.user as any).id || session.user.email;
+  const userId = (session.user as unknown).id || session.user.email;
 
   try {
     const { searchParams } = new URL(req.url);

@@ -26,7 +26,7 @@ import {
 } from "@/lib/pix-validation";
 
 export default function LoginPage() {
-  const { data: session, status } = useSession();
+  const { status } = useSession();
   const router = useRouter();
 
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -68,7 +68,7 @@ export default function LoginPage() {
     setErrorMessage("");
     try {
       await signIn("google", { callbackUrl: "/dashboard" });
-    } catch (err: any) {
+    } catch {
       setErrorMessage("Erro ao iniciar autenticação com Google.");
       setIsLoading(false);
     }
@@ -142,8 +142,8 @@ export default function LoginPage() {
         }
 
         router.push("/dashboard");
-      } catch (err: any) {
-        setErrorMessage(err.message || "Falha ao registrar conta.");
+      } catch (err) {
+        setErrorMessage(err instanceof Error ? err.message : "Falha ao registrar conta.");
         setIsLoading(false);
       }
     } else {
@@ -163,7 +163,7 @@ export default function LoginPage() {
         } else {
           router.push("/dashboard");
         }
-      } catch (err: any) {
+      } catch {
         setErrorMessage("Erro inesperado ao conectar.");
         setIsLoading(false);
       }
@@ -190,7 +190,7 @@ export default function LoginPage() {
         setErrorMessage("Erro ao entrar como demo.");
         setIsLoading(false);
       }
-    } catch (err) {
+    } catch {
       setIsLoading(false);
     }
   };

@@ -23,7 +23,7 @@ export async function GET() {
     if (!user) {
       return NextResponse.json({
         user: {
-          id: (session.user as any).id,
+          id: (session.user as unknown).id,
           name: session.user.name,
           email: session.user.email,
           image: session.user.image,
@@ -37,7 +37,7 @@ export async function GET() {
     console.warn("Erro ao buscar usuário no Prisma (retornando sessão):", error);
     return NextResponse.json({
       user: {
-        id: (session.user as any).id,
+        id: (session.user as unknown).id,
         name: session.user.name,
         email: session.user.email,
         image: session.user.image,

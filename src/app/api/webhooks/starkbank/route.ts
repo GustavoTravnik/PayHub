@@ -19,14 +19,14 @@ export async function POST(req: Request) {
     // ------------------------------------------------------------------
     // Parse e validação do evento
     // ------------------------------------------------------------------
-    let event: any;
+    let event: unknown;
 
     if (isStarkBankConfigured() && signature) {
       // Validação real da assinatura ECDSA com a chave pública do Stark Bank
       try {
         event = await parseWebhookEvent(body, signature);
         console.log(`[Webhook] Evento validado: ${event.subscription} / ${event.log.type}`);
-      } catch (parseError: any) {
+      } catch {
         console.error('[Webhook] Assinatura inválida:', parseError?.message);
         return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
       }
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     }
 
     return NextResponse.json({ message: 'Webhook processado com sucesso' }, { status: 200 });
-  } catch (error: any) {
+  } catch {
     console.error('[Webhook] Erro ao processar:', error);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 // ===========================================================================
 // Handler: Invoice Events (cash-in — comprador pagou o QR Code)
 // ===========================================================================
-async function handleInvoiceEvent(event: any) {
+async function handleInvoiceEvent(event: unknown) {
   const logType = event.log?.type;
   const invoice = event.log?.invoice;
 
@@ -138,7 +138,7 @@ async function handleInvoiceEvent(event: any) {
       });
 
       console.log(`[Webhook/Invoice] 📤 Repasse criado: Transfer ID ${transfer.id} | Valor: R$ ${(netAmount / 100).toFixed(2)}`);
-    } catch (transferError: any) {
+    } catch {
       console.error(`[Webhook/Invoice] ❌ Erro ao criar repasse:`, transferError?.message || transferError);
 
       // Marca como FAILED para reprocessamento manual
@@ -155,7 +155,7 @@ async function handleInvoiceEvent(event: any) {
 // ===========================================================================
 // Handler: Transfer Events (cash-out — repasse Pix confirmado)
 // ===========================================================================
-async function handleTransferEvent(event: any) {
+async function handleTransferEvent(event: unknown) {
   const logType = event.log?.type;
   const transfer = event.log?.transfer;
 

@@ -39,6 +39,7 @@ export default function DashboardPage() {
     if (status === "unauthenticated") {
       router.push("/login");
     } else if (status === "authenticated" && session?.user?.name) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNameInput(session.user.name);
     }
   }, [status, session, router]);
@@ -66,8 +67,8 @@ export default function DashboardPage() {
       await update({ name: nameInput.trim() });
       setProfileSuccessMessage("Perfil atualizado com sucesso!");
       setTimeout(() => setProfileSuccessMessage(""), 3000);
-    } catch (err: any) {
-      setProfileErrorMessage(err.message || "Erro ao atualizar perfil.");
+    } catch (err) {
+      setProfileErrorMessage(err instanceof Error ? err.message : "Erro ao atualizar perfil.");
     } finally {
       setIsUpdatingProfile(false);
     }
@@ -88,7 +89,7 @@ export default function DashboardPage() {
     return null;
   }
 
-  const user = session.user as any;
+  const user = session.user as { name?: string | null; email?: string | null; image?: string | null; cpf?: string | null; phone?: string | null };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col selection:bg-emerald-500 selection:text-slate-950">

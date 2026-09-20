@@ -32,7 +32,7 @@ export async function GET() {
       });
     }
     return NextResponse.json({ webhooks: list });
-  } catch (error: any) {
+  } catch {
     console.error('[StarkBank/Setup] Erro ao listar webhooks:', error?.message);
     return NextResponse.json({ error: error?.message || 'Erro ao listar webhooks' }, { status: 500 });
   }
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
         subscriptions: webhook.subscriptions,
       },
     });
-  } catch (error: any) {
+  } catch {
     console.error('[StarkBank/Setup] Erro ao registrar webhook:', error?.message);
     return NextResponse.json({ error: error?.message || 'Erro ao registrar webhook' }, { status: 500 });
   }
@@ -109,7 +109,7 @@ export async function DELETE(req: Request) {
     console.log(`[StarkBank/Setup] 🗑️ Webhook removido: ${deleted.id}`);
 
     return NextResponse.json({ message: 'Webhook removido com sucesso', id: deleted.id });
-  } catch (error: any) {
+  } catch {
     console.error('[StarkBank/Setup] Erro ao remover webhook:', error?.message);
     return NextResponse.json({ error: error?.message || 'Erro ao remover webhook' }, { status: 500 });
   }

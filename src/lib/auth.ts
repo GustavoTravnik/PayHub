@@ -1,21 +1,20 @@
 import { AuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
-import bcrypt from "bcryptjs";
-import prisma from "@/lib/prisma";
+import { authorizeCredentials } from "./auth/credentials";
+import { signInCallback, jwtCallback, sessionCallback } from "./auth/callbacks";
 
 export const authOptions: AuthOptions = {
   secret: process.env.NEXTAUTH_SECRET || "payhub-super-secret-key-32-chars-long-development",
   session: {
     strategy: "jwt",
-    maxAge: 30 * 24 * 60 * 60, // 30 dias
+    maxAge: 30 * 24 * 60 * 60,
   },
   pages: {
     signIn: "/login",
     error: "/login",
   },
   providers: [
-    // Provider Google OAuth Principal
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
       ? [
           GoogleProvider({
@@ -25,8 +24,6 @@ export const authOptions: AuthOptions = {
           }),
         ]
       : []),
-
-    // Provider de Credenciais (E-mail e Senha) e Acesso Demo
     CredentialsProvider({
       id: "credentials",
       name: "E-mail e Senha",
@@ -38,188 +35,12 @@ export const authOptions: AuthOptions = {
         phone: { label: "Telefone", type: "text" },
         isDemo: { label: "Demo", type: "text" },
       },
-      async authorize(credentials) {
-        if (!credentials?.email) {
-          throw new Error("E-mail é obrigatório.");
-        }
-
-        const email = credentials.email.toLowerCase().trim();
-
-        // 1. Caso seja Acesso Rápido de Teste (Demo)
-        if (credentials.isDemo === "true") {
-          const name = credentials.name || email.split("@")[0];
-          return {
-            id: `usr_${Buffer.from(email).toString("hex").slice(0, 10)}`,
-            email,
-            name,
-            image: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
-            cpf: credentials.cpf || "52998224725",
-            phone: credentials.phone || "11987654321",
-          } as any;
-        }
-
-        // 2. Login com Senha Normal
-        try {
-          const user = await prisma.user.findUnique({
-            where: { email },
-          });
-
-          if (!user) {
-            throw new Error("Credenciais inválidas. Verifique o e-mail e senha.");
-          }
-
-          if (!user.password) {
-            throw new Error("Esta conta foi criada com Google. Faça login clicando em 'Continuar com o Google'.");
-          }
-
-          if (!credentials.password) {
-            throw new Error("Por favor, digite sua senha.");
-          }
-
-          const passwordMatches = await bcrypt.compare(credentials.password, user.password);
-          if (!passwordMatches) {
-            throw new Error("Credenciais inválidas. Verifique a senha digitada.");
-          }
-
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.image,
-            cpf: user.cpf,
-            phone: user.phone,
-          } as any;
-        } catch (dbError: any) {
-          // Se for erro de validação lançado por nós, relança
-          if (dbError.message && !dbError.message.includes("PrismaClient")) {
-            throw dbError;
-          }
-
-          console.warn("Prisma indisponível ao autenticar, usando fallback em dev:", dbError);
-          return {
-            id: `usr_${Date.now()}`,
-            email,
-            name: credentials.name || email.split("@")[0],
-            image: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(email)}`,
-            cpf: credentials.cpf || "52998224725",
-            phone: credentials.phone || "11987654321",
-          } as any;
-        }
-      },
+      authorize: authorizeCredentials,
     }),
   ],
   callbacks: {
-    async signIn({ user, account }) {
-      if (account?.provider === "google") {
-        try {
-          if (user.email) {
-            const normalizedEmail = user.email.toLowerCase().trim();
-            const existingUser = await prisma.user.findUnique({
-              where: { email: normalizedEmail },
-            });
-
-            let dbUserId = "";
-
-            if (!existingUser) {
-              const newUser = await prisma.user.create({
-                data: {
-                  email: normalizedEmail,
-                  name: user.name || "Usuário PayHub",
-                  image: user.image || `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
-                },
-              });
-              dbUserId = newUser.id;
-              user.id = newUser.id;
-            } else {
-              dbUserId = existingUser.id;
-              user.id = existingUser.id;
-              (user as any).cpf = existingUser.cpf;
-              (user as any).phone = existingUser.phone;
-            }
-
-            // Cria vínculo na tabela Account se ainda não existir
-            if (account.providerAccountId && dbUserId) {
-              const existingAccount = await prisma.account.findUnique({
-                where: {
-                  provider_providerAccountId: {
-                    provider: account.provider,
-                    providerAccountId: account.providerAccountId,
-                  },
-                },
-              });
-
-              if (!existingAccount) {
-                await prisma.account.create({
-                  data: {
-                    userId: dbUserId,
-                    type: account.type,
-                    provider: account.provider,
-                    providerAccountId: account.providerAccountId,
-                    access_token: account.access_token,
-                    expires_at: account.expires_at,
-                    token_type: account.token_type,
-                    scope: account.scope,
-                    id_token: account.id_token,
-                  },
-                });
-              }
-            }
-          }
-        } catch (error) {
-          console.warn("Sincronização Prisma no Google Login falhou:", error);
-        }
-      }
-      return true;
-    },
-    async jwt({ token, user, trigger, session }) {
-      // Login inicial
-      if (user) {
-        token.id = user.id;
-        token.email = user.email?.toLowerCase().trim();
-        token.name = user.name;
-        token.picture = user.image;
-        token.cpf = (user as any).cpf || null;
-        token.phone = (user as any).phone || null;
-      }
-
-      // Sincroniza dados atualizados do banco (especialmente após Google login ou KYC)
-      if (token.email && (!token.cpf || !token.phone || !token.id)) {
-        try {
-          const dbUser = await prisma.user.findUnique({
-            where: { email: token.email as string },
-            select: { id: true, name: true, image: true, cpf: true, phone: true },
-          });
-
-          if (dbUser) {
-            token.id = dbUser.id;
-            token.cpf = dbUser.cpf;
-            token.phone = dbUser.phone;
-            if (dbUser.name) token.name = dbUser.name;
-          }
-        } catch (error) {
-          // Mantém valores existentes se o banco falhar
-        }
-      }
-
-      // Permite atualizar os dados KYC via session.update()
-      if (trigger === "update" && session) {
-        if (session.name) token.name = session.name;
-        if (session.cpf) token.cpf = session.cpf;
-        if (session.phone) token.phone = session.phone;
-      }
-      return token;
-    },
-    async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id = token.id as string;
-        session.user.name = token.name as string;
-        session.user.email = token.email as string;
-        session.user.image = token.picture as string;
-        (session.user as any).cpf = token.cpf as string | null;
-        (session.user as any).phone = token.phone as string | null;
-        (session.user as any).isKycComplete = Boolean(token.cpf && token.phone);
-      }
-      return session;
-    },
+    signIn: signInCallback,
+    jwt: jwtCallback,
+    session: sessionCallback,
   },
 };

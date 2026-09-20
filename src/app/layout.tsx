@@ -26,6 +26,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       suppressHydrationWarning
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <meta name="darkreader-lock" />
+      </head>
       <body suppressHydrationWarning className="min-h-full flex flex-col bg-slate-950 text-slate-100">
         <AuthProvider>{children}</AuthProvider>
       </body>

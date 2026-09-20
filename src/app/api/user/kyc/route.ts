@@ -72,7 +72,7 @@ export async function POST(req: Request) {
         },
       });
     }
-  } catch (err: any) {
+  } catch {
     console.error("Erro ao atualizar KYC do usuário:", err);
     return NextResponse.json({ error: "Erro interno ao processar documentação." }, { status: 500 });
   }

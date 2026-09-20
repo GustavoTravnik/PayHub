@@ -20,7 +20,7 @@ import {
 } from "@/lib/pix-validation";
 
 export function KycCompletionModal({ onComplete }: { onComplete?: () => void }) {
-  const { data: session, update } = useSession();
+  const { update } = useSession();
 
   const [cpf, setCpf] = useState("");
   const [phone, setPhone] = useState("");
@@ -61,8 +61,8 @@ export function KycCompletionModal({ onComplete }: { onComplete?: () => void }) 
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          cpf,   // O backend aplica onlyDigits/unmaskPixKey
-          phone, // O backend aplica onlyDigits/unmaskPixKey
+          cpf,
+          phone,
         }),
       });
 
@@ -74,7 +74,6 @@ export function KycCompletionModal({ onComplete }: { onComplete?: () => void }) 
 
       setSuccessMessage("Documentação homologada com sucesso!");
 
-      // Atualiza a sessão NextAuth do cliente
       await update({
         cpf: unmaskPixKey("CPF", cpf),
         phone: unmaskPixKey("PHONE", phone),
@@ -83,8 +82,8 @@ export function KycCompletionModal({ onComplete }: { onComplete?: () => void }) 
       if (onComplete) {
         setTimeout(onComplete, 1500);
       }
-    } catch (err: any) {
-      setErrorMessage(err.message || "Erro inesperado.");
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : "Erro inesperado.");
     } finally {
       setIsSubmitting(false);
     }
@@ -130,7 +129,6 @@ export function KycCompletionModal({ onComplete }: { onComplete?: () => void }) 
       )}
 
       <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* CPF */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-slate-300">
@@ -165,7 +163,6 @@ export function KycCompletionModal({ onComplete }: { onComplete?: () => void }) 
           )}
         </div>
 
-        {/* Telefone */}
         <div>
           <div className="flex items-center justify-between mb-1.5">
             <label className="text-xs font-semibold text-slate-300">

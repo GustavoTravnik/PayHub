@@ -122,7 +122,7 @@ export async function POST(req: Request) {
         invoiceLink = invoice.link;
 
         console.log(`[StarkBank] Invoice criada: ${invoice.id} | Status: ${invoice.status}`);
-      } catch (starkError: any) {
+      } catch {
         console.error("[StarkBank] Erro ao criar Invoice:", starkError?.message || starkError);
         return NextResponse.json(
           { error: "Erro ao gerar cobrança Pix no Stark Bank. Verifique as credenciais." },
@@ -171,7 +171,7 @@ export async function POST(req: Request) {
       transaction,
       invoiceLink, // Link público do Stark Bank para pagamento
     });
-  } catch (error: any) {
+  } catch {
     console.error("Erro ao gerar cobrança Pix:", error);
     return NextResponse.json({ error: "Erro interno ao gerar cobrança Pix." }, { status: 500 });
   }

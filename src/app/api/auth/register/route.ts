@@ -96,7 +96,7 @@ export async function POST(req: Request) {
         { status: 201 }
       );
     }
-  } catch (err: any) {
+  } catch {
     console.error("Erro no cadastro de usuário:", err);
     return NextResponse.json({ error: "Erro interno ao processar o cadastro." }, { status: 500 });
   }

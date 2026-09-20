@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
   QrCode,
   Copy,
@@ -11,166 +10,42 @@ import {
   ArrowRight,
   Info,
   Clock,
-  ExternalLink,
   Sparkles,
   RefreshCw,
 } from "lucide-react";
-import { formatPixKeyForDisplay, PixKeyType } from "@/lib/pix-validation";
-
-interface PixAccount {
-  id: string;
-  keyType: PixKeyType;
-  pixKey: string;
-}
-
-interface TransactionResult {
-  id: string;
-  amount: number;
-  fee: number;
-  netAmount: number;
-  status: string;
-  brcode: string;
-  qrCode: string;
-  starkBankInvoiceId: string;
-  createdAt: string;
-  pixAccount?: {
-    keyType: string;
-    pixKey: string;
-  };
-}
-
-const MIN_VALUE = 20;    // R$ 20,00
-const MAX_VALUE = 2000;  // R$ 2.000,00
-const PLATFORM_FEE = 1.5; // R$ 1,50
+import { formatPixKeyForDisplay } from "@/lib/pix-validation";
+import { useChargeGenerator } from "./hooks/useChargeGenerator";
 
 export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () => void }) {
-  const [pixAccounts, setPixAccounts] = useState<PixAccount[]>([]);
-  const [selectedAccountId, setSelectedAccountId] = useState("");
-  const [rawAmountInput, setRawAmountInput] = useState("50,00");
-  const [numericValue, setNumericValue] = useState<number>(50);
-  const [isLoadingAccounts, setIsLoadingAccounts] = useState(true);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [errorMessage, setErrorMessage] = useState("");
-  const [generatedCharge, setGeneratedCharge] = useState<TransactionResult | null>(null);
-  const [copied, setCopied] = useState(false);
+  const {
+    pixAccounts,
+    selectedAccountId,
+    setSelectedAccountId,
+    rawAmountInput,
+    numericValue,
+    isLoadingAccounts,
+    isGenerating,
+    errorMessage,
+    generatedCharge,
+    copied,
+    handleAmountChange,
+    handleQuickSelect,
+    handleCreateCharge,
+    handleCopyBrcode,
+    handleReset,
+    netAmount,
+  } = useChargeGenerator();
 
-  // Busca chaves cadastradas
-  useEffect(() => {
-    async function loadAccounts() {
-      try {
-        setIsLoadingAccounts(true);
-        const res = await fetch("/api/pix-accounts");
-        if (res.ok) {
-          const data = await res.json();
-          const accounts: PixAccount[] = data.accounts || [];
-          setPixAccounts(accounts);
-          if (accounts.length > 0) {
-            setSelectedAccountId(accounts[0].id);
-          }
-        }
-      } catch (err) {
-        console.error("Erro ao carregar contas Pix:", err);
-      } finally {
-        setIsLoadingAccounts(false);
-      }
-    }
-    loadAccounts();
-  }, []);
+  const MIN_VALUE = 20;
+  const MAX_VALUE = 2000;
+  const PLATFORM_FEE = 1.5;
 
-  // Formatação monetária ao digitar
-  const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    let val = e.target.value.replace(/\D/g, "");
-    if (!val) {
-      setRawAmountInput("");
-      setNumericValue(0);
-      return;
-    }
-
-    const cents = parseInt(val, 10);
-    const floatVal = cents / 100;
-    setNumericValue(floatVal);
-    setRawAmountInput(
-      floatVal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    );
-    setErrorMessage("");
-  };
-
-  const handleQuickSelect = (val: number) => {
-    setNumericValue(val);
-    setRawAmountInput(
-      val.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-    );
-    setErrorMessage("");
-  };
-
-  // Cálculo da taxa e líquido
   const isBelowMin = numericValue < MIN_VALUE;
   const isAboveMax = numericValue > MAX_VALUE;
   const isValidAmount = numericValue >= MIN_VALUE && numericValue <= MAX_VALUE;
-  const netAmount = isValidAmount ? Math.max(0, numericValue - PLATFORM_FEE) : 0;
-
-  const handleCreateCharge = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage("");
-
-    if (!selectedAccountId) {
-      setErrorMessage("Por favor, selecione uma chave Pix de destino para receber o repasse.");
-      return;
-    }
-
-    if (isBelowMin) {
-      setErrorMessage(`O valor mínimo permitido é de R$ ${MIN_VALUE},00.`);
-      return;
-    }
-
-    if (isAboveMax) {
-      setErrorMessage(`O valor máximo permitido é de R$ ${MAX_VALUE.toLocaleString("pt-BR")},00.`);
-      return;
-    }
-
-    const amountInCents = Math.round(numericValue * 100);
-
-    try {
-      setIsGenerating(true);
-      const res = await fetch("/api/charges", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pixAccountId: selectedAccountId,
-          amountInCents,
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Erro ao gerar cobrança Pix.");
-      }
-
-      setGeneratedCharge(data.transaction);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Falha inesperada ao comunicar com o servidor.");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleCopyBrcode = () => {
-    if (!generatedCharge?.brcode) return;
-    navigator.clipboard.writeText(generatedCharge.brcode);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
-
-  const handleReset = () => {
-    setGeneratedCharge(null);
-    setCopied(false);
-    setErrorMessage("");
-  };
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      {/* Se a cobrança acabou de ser gerada, exibe o Painel de Pagamento com QR Code */}
       {generatedCharge ? (
         <div className="rounded-3xl border border-emerald-500/30 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 p-6 sm:p-10 shadow-2xl space-y-8 animate-in fade-in zoom-in-95 duration-200">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-800 pb-6">
@@ -193,10 +68,9 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
-            {/* Imagem do QR Code */}
             <div className="flex flex-col items-center justify-center p-6 rounded-2xl bg-white border border-slate-200 shadow-xl">
               <img
-                src={generatedCharge.qrCode}
+                src={generatedCharge.qrCode ?? undefined}
                 alt="QR Code Pix"
                 className="h-60 w-60 object-contain rounded-lg"
               />
@@ -205,7 +79,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
               </p>
             </div>
 
-            {/* Informações de Pagamento e Copia e Cola */}
             <div className="space-y-5">
               <div>
                 <p className="text-xs font-medium text-slate-400">Valor Total a Pagar</p>
@@ -214,7 +87,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                 </p>
               </div>
 
-              {/* Detalhes de Repasse */}
               <div className="rounded-xl bg-slate-950 border border-slate-800 p-4 space-y-2.5 text-xs">
                 <div className="flex justify-between text-slate-400">
                   <span>Taxa da Plataforma PayHub:</span>
@@ -236,16 +108,15 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                 </div>
               </div>
 
-              {/* Pix Copia e Cola */}
               <div className="space-y-2">
                 <label className="text-xs font-semibold text-slate-300">
-                  Código Pix "Copia e Cola":
+                  Código Pix &quot;Copia e Cola&quot;:
                 </label>
                 <div className="flex gap-2">
                   <input
                     type="text"
                     readOnly
-                    value={generatedCharge.brcode}
+                    value={generatedCharge.brcode ?? ""}
                     className="flex-1 rounded-xl bg-slate-950 border border-slate-800 px-3 py-2.5 text-xs text-slate-400 font-mono focus:outline-none select-all"
                   />
                   <button
@@ -281,9 +152,9 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
             </div>
 
             <button
-              type="button"
-              onClick={handleReset}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition-all"
+               type="button"
+               onClick={handleReset}
+               className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-white border border-slate-700 transition-all"
             >
               <RefreshCw className="h-3.5 w-3.5" />
               <span>Emitir Outra Cobrança</span>
@@ -291,7 +162,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
           </div>
         </div>
       ) : (
-        /* Formulário de Criação de Cobrança */
         <div className="rounded-3xl border border-slate-800 bg-slate-900/60 p-6 sm:p-10 backdrop-blur-sm shadow-xl space-y-8">
           <div className="flex items-center gap-3.5 border-b border-slate-800 pb-6">
             <div className="h-11 w-11 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
@@ -312,7 +182,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
             </div>
           )}
 
-          {/* Aviso se não houver chave Pix cadastrada */}
           {!isLoadingAccounts && pixAccounts.length === 0 ? (
             <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-6 text-center space-y-4">
               <KeyRound className="h-8 w-8 text-amber-400 mx-auto" />
@@ -333,7 +202,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
             </div>
           ) : (
             <form onSubmit={handleCreateCharge} className="space-y-6">
-              {/* Seleção da Chave Pix de Recebimento */}
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-2">
                   1. Selecione a Chave Pix de Destino (Recebedor do Repasse):
@@ -372,7 +240,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                 )}
               </div>
 
-              {/* Input de Valor Monetário em R$ */}
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs font-semibold text-slate-300">
@@ -392,7 +259,7 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                     type="text"
                     required
                     value={rawAmountInput}
-                    onChange={handleAmountChange}
+                    onChange={(e) => handleAmountChange(e.target.value)}
                     placeholder="0,00"
                     className={`w-full rounded-2xl bg-slate-950 border px-12 py-3 text-2xl font-bold text-white font-mono placeholder-slate-600 focus:outline-none transition-colors ${
                       isBelowMin || isAboveMax
@@ -402,7 +269,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                   />
                 </div>
 
-                {/* Feedback de Validação dos Limites */}
                 {isBelowMin && (
                   <p className="mt-1.5 text-xs text-rose-400 flex items-center gap-1 font-medium">
                     <AlertCircle className="h-3.5 w-3.5" />
@@ -416,7 +282,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                   </p>
                 )}
 
-                {/* Botões Rápidos de Valor */}
                 <div className="flex flex-wrap gap-2 mt-3">
                   {[20, 50, 100, 250, 500, 1000, 2000].map((val) => (
                     <button
@@ -435,7 +300,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                 </div>
               </div>
 
-              {/* Detalhamento do Split / Taxas */}
               <div className="rounded-2xl border border-slate-800 bg-slate-950/80 p-5 space-y-3">
                 <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                   <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
@@ -476,7 +340,6 @@ export function PixChargeGenerator({ onNavigateToPix }: { onNavigateToPix?: () =
                 </div>
               </div>
 
-              {/* Botão de Geração */}
               <button
                 type="submit"
                 disabled={isGenerating || !isValidAmount || !selectedAccountId}

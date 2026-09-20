@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
   KeyRound,
   Plus,
@@ -19,131 +18,27 @@ import {
   PixKeyType,
   PIX_KEY_LABELS,
   PIX_KEY_PLACEHOLDERS,
-  maskPixInput,
-  unmaskPixKey,
-  validatePixKey,
   formatPixKeyForDisplay,
 } from "@/lib/pix-validation";
-
-interface PixAccount {
-  id: string;
-  keyType: PixKeyType;
-  pixKey: string;
-  createdAt: string;
-}
+import { usePixAccountManager } from "./hooks/usePixAccountManager";
 
 export function PixAccountManager() {
-  const [accounts, setAccounts] = useState<PixAccount[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedType, setSelectedType] = useState<PixKeyType>("CPF");
-  const [inputValue, setInputValue] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-
-  // Carrega as chaves ao montar
-  const fetchAccounts = async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch("/api/pix-accounts");
-      if (res.ok) {
-        const data = await res.json();
-        setAccounts(data.accounts || []);
-      }
-    } catch (err) {
-      console.error("Erro ao buscar contas Pix:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAccounts();
-  }, []);
-
-  // Quando o tipo selecionado muda, limpa o input e mensagens
-  const handleTypeChange = (type: PixKeyType) => {
-    setSelectedType(type);
-    setInputValue("");
-    setErrorMessage("");
-    setSuccessMessage("");
-  };
-
-  // Aplica máscara dinamicamente enquanto digita
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value;
-    const masked = maskPixInput(selectedType, raw);
-    setInputValue(masked);
-    setErrorMessage("");
-  };
-
-  // Preview de como será persistido no banco (sem máscara)
-  const unmaskedPreview = unmaskPixKey(selectedType, inputValue);
-  const liveValidation = inputValue ? validatePixKey(selectedType, inputValue) : null;
-
-  // Submissão
-  const handleCreatePixAccount = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setErrorMessage("");
-    setSuccessMessage("");
-
-    const validation = validatePixKey(selectedType, inputValue);
-    if (!validation.isValid) {
-      setErrorMessage(validation.message || "Chave Pix inválida.");
-      return;
-    }
-
-    try {
-      setIsSubmitting(true);
-      const res = await fetch("/api/pix-accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          keyType: selectedType,
-          pixKey: inputValue, // O backend também aplicará unmaskPixKey garantindo integridade
-        }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Erro ao cadastrar chave Pix.");
-      }
-
-      setSuccessMessage("Chave Pix cadastrada com sucesso e salva sem máscara!");
-      setInputValue("");
-      await fetchAccounts();
-      setTimeout(() => setSuccessMessage(""), 4000);
-    } catch (err: any) {
-      setErrorMessage(err.message || "Erro inesperado.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  // Exclusão Lógica
-  const handleDelete = async (id: string) => {
-    if (!confirm("Tem certeza que deseja desativar esta chave Pix?")) return;
-
-    try {
-      setDeletingId(id);
-      const res = await fetch(`/api/pix-accounts?id=${id}`, {
-        method: "DELETE",
-      });
-
-      if (!res.ok) {
-        throw new Error("Erro ao excluir conta Pix.");
-      }
-
-      // Remove da listagem visual (já que foi soft-deleted)
-      setAccounts((prev) => prev.filter((acc) => acc.id !== id));
-    } catch (err: any) {
-      alert(err.message || "Falha na exclusão.");
-    } finally {
-      setDeletingId(null);
-    }
-  };
+  const {
+    accounts,
+    isLoading,
+    isSubmitting,
+    selectedType,
+    inputValue,
+    errorMessage,
+    successMessage,
+    deletingId,
+    unmaskedPreview,
+    liveValidation,
+    handleTypeChange,
+    handleInputChange,
+    handleCreatePixAccount,
+    handleDelete,
+  } = usePixAccountManager();
 
   const getTypeIcon = (type: PixKeyType) => {
     switch (type) {
@@ -162,7 +57,6 @@ export function PixAccountManager() {
 
   return (
     <div className="space-y-8">
-      {/* Formulário de Cadastro */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 sm:p-8 backdrop-blur-sm space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-800 pb-5">
           <div className="flex items-center gap-3">
@@ -198,7 +92,6 @@ export function PixAccountManager() {
         )}
 
         <form onSubmit={handleCreatePixAccount} className="space-y-6">
-          {/* Seletor de Tipo de Chave */}
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-2">
               Escolha o Tipo de Chave Pix:
@@ -225,7 +118,6 @@ export function PixAccountManager() {
             </div>
           </div>
 
-          {/* Campo de Entrada com Máscara e Validação */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
               <label className="text-xs font-semibold text-slate-300">
@@ -254,7 +146,7 @@ export function PixAccountManager() {
               <input
                 type={selectedType === "EMAIL" ? "email" : "text"}
                 value={inputValue}
-                onChange={handleInputChange}
+                onChange={(e) => handleInputChange(e.target.value)}
                 placeholder={PIX_KEY_PLACEHOLDERS[selectedType]}
                 className="w-full rounded-xl bg-slate-950 border border-slate-800 px-4 py-3 text-sm text-white placeholder-slate-600 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition-colors font-mono"
               />
@@ -263,7 +155,6 @@ export function PixAccountManager() {
               </div>
             </div>
 
-            {/* Preview de gravação no banco sem máscara */}
             {inputValue && (
               <div className="mt-2.5 flex items-center gap-2 p-2.5 rounded-lg bg-slate-950/80 border border-slate-800/80 text-xs">
                 <Database className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
@@ -292,7 +183,6 @@ export function PixAccountManager() {
         </form>
       </div>
 
-      {/* Listagem de Chaves Pix Cadastradas */}
       <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-6 sm:p-8 backdrop-blur-sm space-y-6">
         <div className="flex items-center justify-between border-b border-slate-800 pb-4">
           <div>

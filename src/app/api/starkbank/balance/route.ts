@@ -27,7 +27,7 @@ export async function GET() {
         updated: balance.updated,
       },
     });
-  } catch (error: any) {
+  } catch {
     console.error('[StarkBank/Balance] Erro ao consultar saldo:', error?.message);
     return NextResponse.json({ error: error?.message || 'Erro ao consultar saldo' }, { status: 500 });
   }
